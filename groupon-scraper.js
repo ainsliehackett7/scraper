@@ -85,7 +85,7 @@ async function scrapeGroupon(zipCode, radius, category) {
 
 // Main function to get user input
 async function main() {
-  console.log('=== Groupon Deal Scraper ===\n');
+  console.log('=== Groupon Deal Scraper v1.0 ===\n');
   
   const zipCode = await askQuestion('Enter zip code (or press Enter to skip): ');
   const radius = await askQuestion('Enter search radius in miles (or press Enter to skip): ');
