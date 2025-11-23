@@ -12,6 +12,54 @@ function askQuestion(question) {
   });
 }
 
+function filterRelevantDeals(deals, categorySearchTerm) {
+  if (!categorySearchTerm || categorySearchTerm.trim() === '') {
+    return deals;
+  }
+  
+  const searchTerm = categorySearchTerm.toLowerCase().trim();
+  
+  const searchVariations = [
+    searchTerm,
+    searchTerm.endsWith('s') ? searchTerm.slice(0, -1) : searchTerm + 's',
+    searchTerm.replace(/-/g, ' '),
+    searchTerm.replace(/\s+/g, '-')
+  ];
+  
+  const synonymMap = {
+    'restaurant': ['dining', 'food', 'eat', 'meal', 'cuisine', 'cafe', 'bistro', 'eatery'],
+    'spa': ['massage', 'wellness', 'relaxation', 'beauty', 'facial', 'sauna'],
+    'travel': ['hotel', 'vacation', 'trip', 'getaway', 'resort', 'flight'],
+    'fitness': ['gym', 'workout', 'exercise', 'yoga', 'training'],
+    'entertainment': ['show', 'concert', 'event', 'theater', 'movie', 'performance'],
+    'beauty': ['salon', 'hair', 'nails', 'makeup', 'cosmetic', 'spa'],
+    'health': ['medical', 'dental', 'doctor', 'clinic', 'wellness', 'healthcare']
+  };
+  
+  const synonyms = [];
+  for (const [key, values] of Object.entries(synonymMap)) {
+    if (searchVariations.some(variation => key.includes(variation) || variation.includes(key))) {
+      synonyms.push(...values);
+    }
+  }
+  
+  return deals.filter(deal => {
+    const titleLower = (deal.title || '').toLowerCase();
+    const descriptionLower = (deal.description || '').toLowerCase();
+    const combinedText = `${titleLower} ${descriptionLower}`;
+    
+    const matchesExact = searchVariations.some(variation => 
+      titleLower.includes(variation) || descriptionLower.includes(variation)
+    );
+    
+    const matchesSynonym = synonyms.some(synonym => 
+      combinedText.includes(synonym)
+    );
+    
+    return matchesExact || matchesSynonym;
+  });
+}
+
 async function scrapeGroupon(zipCode, radius, category) {
   let browser;
   
@@ -52,26 +100,45 @@ async function scrapeGroupon(zipCode, radius, category) {
     // Wait for page to fully load
     await new Promise(resolve => setTimeout(resolve, 4000));
     
-    // Extract deals with better selectors
+    // Extract deals with better selectors and additional metadata
     const deals = await page.evaluate(() => {
-      const dealElements = document.querySelectorAll('[data-test="deal-card"], .deal-card, [class*="DealCard"]');
+      const dealElements = document.querySelectorAll('[data-testid^="deal-card-"], [data-test="deal-card"], .deal-card, [class*="DealCard"]');
       
       if (dealElements.length === 0) {
         return Array.from(document.querySelectorAll('a[href*="/deals/"]')).slice(0, 10).map(el => ({
           title: el.innerText || 'N/A',
+          description: '',
           url: el.href
         }));
       }
       
-      return Array.from(dealElements).slice(0, 10).map(el => ({
-        title: el.querySelector('h2, [class*="Title"]')?.innerText || el.innerText.split('\n')[0],
-        discount: el.querySelector('[class*="Discount"], [data-test="discount"]')?.innerText || 'N/A',
-        url: el.querySelector('a')?.href || 'N/A'
-      }));
+      return Array.from(dealElements).map(el => {
+        const title = el.querySelector('h2, h3, [class*="Title"], [class*="title"]')?.innerText || el.innerText.split('\n')[0];
+        const discount = el.querySelector('[class*="Discount"], [class*="discount"], [data-test="discount"]')?.innerText || 'N/A';
+        const url = el.querySelector('a')?.href || 'N/A';
+        
+        const allText = el.innerText || '';
+        const description = allText.replace(title, '').trim();
+        
+        return {
+          title: title,
+          discount: discount,
+          url: url,
+          description: description
+        };
+      });
     });
     
-    console.log(`\nFound ${deals.length} deals for "${category || 'all'}" in ${zipCode || 'your area'}`);
-    console.log(JSON.stringify(deals, null, 2));
+    const filteredDeals = filterRelevantDeals(deals, category);
+    
+    const outputDeals = filteredDeals.slice(0, 10).map(deal => ({
+      title: deal.title,
+      discount: deal.discount,
+      url: deal.url
+    }));
+    
+    console.log(`\nFound ${outputDeals.length} relevant deals for "${category || 'all'}" in ${zipCode || 'your area'}`);
+    console.log(JSON.stringify(outputDeals, null, 2));
     
   } catch (error) {
     console.error('Error scraping Groupon:', error.message);
